@@ -3,8 +3,8 @@
 
 export const PREP_MS = 7000
 export const CHEWS_PER_BITE = 32
-// 3 chews every 2 seconds.
-export const CHEW_MS = 2000 / 3
+// 5 chews every 4 seconds.
+export const CHEW_MS = 4000 / 5
 // Chew 1 lands one beat after the bite starts and chew 32 gets its own full
 // beat (plus a little breath) before the next prep timer begins.
 export const CHEW_PHASE_MS = (CHEWS_PER_BITE + 1) * CHEW_MS + 400

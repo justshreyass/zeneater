@@ -1,9 +1,27 @@
 import { useEffect, useMemo, useState } from 'react'
 import { audio } from '../engine/audio'
 
-const FOODS = ['🍎', '🥑', '🍕', '🥕', '🍙', '🥦', '🍓', '🍩', '🥐', '🍌', '🌮', '🍜', '🍒', '🧀', '🍉', '🥟']
+// Every food & (non-alcoholic) drink emoji; each page load picks its own mix.
+const FOODS = [
+  // fruit
+  '🍇', '🍈', '🍉', '🍊', '🍋', '🍌', '🍍', '🥭', '🍎', '🍏', '🍐', '🍑', '🍒', '🍓', '🫐', '🥝', '🍅', '🫒', '🥥',
+  // veg
+  '🥑', '🍆', '🥔', '🥕', '🌽', '🌶️', '🫑', '🥒', '🥬', '🥦', '🧄', '🧅', '🥜', '🫘', '🌰', '🫚', '🫛', '🍄',
+  // prepared
+  '🍞', '🥐', '🥖', '🫓', '🥨', '🥯', '🥞', '🧇', '🧀', '🍖', '🍗', '🥩', '🥓', '🍔', '🍟', '🍕', '🌭', '🥪', '🌮',
+  '🌯', '🫔', '🥙', '🧆', '🥚', '🍳', '🥘', '🍲', '🫕', '🥣', '🥗', '🍿', '🧈', '🥫',
+  // asian
+  '🍱', '🍘', '🍙', '🍚', '🍛', '🍜', '🍝', '🍠', '🍢', '🍣', '🍤', '🍥', '🥮', '🍡', '🥟', '🥠', '🥡', '🦪',
+  // sweets
+  '🍦', '🍧', '🍨', '🍩', '🍪', '🎂', '🍰', '🧁', '🥧', '🍫', '🍬', '🍭', '🍮', '🍯',
+  // drinks
+  '🥛', '☕', '🫖', '🍵', '🧃', '🥤', '🧋',
+]
 
-// Deterministic so stickers don't jump around between renders.
+// A fresh seed per page load, so every visit gets a new scatter. Within a
+// visit the layout stays put (and survives resizes with the same mix).
+const SEED = 1 + Math.floor(Math.random() * 2147483645)
+
 function rng(seed: number) {
   return () => {
     seed = (seed * 16807) % 2147483647
@@ -27,8 +45,14 @@ interface Sticker {
 // Scatter stickers around the screen, keeping the wordmark, the dial and the
 // hint pill clear. Mirrors the --dial size in styles.css.
 function layout(w: number, h: number): Sticker[] {
-  const r = rng(32)
+  const r = rng(SEED)
   const out: Sticker[] = []
+  // Shuffle the pool, then place as many as comfortably fit.
+  const pool = [...FOODS]
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(r() * (i + 1))
+    ;[pool[i], pool[j]] = [pool[j], pool[i]]
+  }
   const dial = Math.max(250, Math.min(420, w * 0.84, h - 270))
   const dialR = dial / 2 + 44
   const cx = w / 2
@@ -39,7 +63,7 @@ function layout(w: number, h: number): Sticker[] {
     (y < 150 && Math.abs(x - cx) < Math.min(330, w * 0.42)) ||
     (y > h - 90 && Math.abs(x - cx) < 270)
 
-  for (let i = 0; i < FOODS.length; i++) {
+  for (let i = 0; i < pool.length && out.length < 18; i++) {
     let spot: [number, number] | null = null
     for (let tries = 0; tries < 60 && !spot; tries++) {
       const x = 30 + r() * (w - 60)
@@ -50,7 +74,7 @@ function layout(w: number, h: number): Sticker[] {
     if (!spot) continue
     const depth = 0.4 + r() * 0.6
     out.push({
-      emoji: FOODS[i],
+      emoji: pool[i],
       x: (spot[0] / w) * 100,
       y: (spot[1] / h) * 100,
       size: (Math.min(w, h) < 600 ? 26 : 34) + depth * 36,
