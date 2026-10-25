@@ -42,41 +42,85 @@ interface Sticker {
   rot: number
 }
 
-// Scatter stickers around the screen, keeping the wordmark, the dial and the
-// hint pill clear. Mirrors the --dial size in styles.css.
+// Distance from a point to an axis-aligned rect (0 inside).
+const rectDist = (x: number, y: number, [x0, y0, x1, y1]: number[]) =>
+  Math.hypot(Math.max(x0 - x, 0, x - x1), Math.max(y0 - y, 0, y - y1))
+
+// Spread stickers evenly over the free space around the wordmark, the dial
+// and the bottom dock. Best-candidate sampling: each sticker tries many
+// random spots and keeps the one farthest from everything already placed,
+// which fills gaps first and never clumps, yet differs on every load.
+// Mirrors the --dial size and .stage offset in styles.css.
 function layout(w: number, h: number): Sticker[] {
   const r = rng(SEED)
-  const out: Sticker[] = []
-  // Shuffle the pool, then place as many as comfortably fit.
   const pool = [...FOODS]
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(r() * (i + 1))
     ;[pool[i], pool[j]] = [pool[j], pool[i]]
   }
+
   const dial = Math.max(250, Math.min(420, w * 0.84, h - 300))
   const dialR = dial / 2 + 44
   const cx = w / 2
   const cy = h / 2 + 12
-  const spacing = Math.max(70, Math.min(w, h) * 0.13)
-  const blocked = (x: number, y: number) =>
-    Math.hypot(x - cx, y - cy) < dialR ||
-    (y < 150 && Math.abs(x - cx) < Math.min(330, w * 0.42)) ||
-    (y > h - 140 && Math.abs(x - cx) < 280)
+  const titleHalf = Math.min(330, w * 0.42)
+  const title = [cx - titleHalf, -Infinity, cx + titleHalf, 150]
+  const dock = [cx - 280, h - 140, cx + 280, Infinity]
 
-  for (let i = 0; i < pool.length && out.length < 18; i++) {
-    let spot: [number, number] | null = null
-    for (let tries = 0; tries < 60 && !spot; tries++) {
-      const x = 30 + r() * (w - 60)
-      const y = 34 + r() * (h - 68)
-      if (!blocked(x, y) && out.every((s) => Math.hypot((s.x / 100) * w - x, (s.y / 100) * h - y) > spacing)) spot = [x, y]
+  // How many fit: roughly one per 70k px² of free space.
+  const free = w * h - Math.PI * dialR * dialR - titleHalf * 2 * 150 - Math.min(w, 560) * 140
+  const target = Math.max(10, Math.min(22, Math.round(free / 70000)))
+  const small = Math.min(w, h) < 600
+  const minGap = small ? 52 : 72
+  // Distances to edges and obstacles are scaled up, so a sticker only needs
+  // part of a gap from them: half on big screens, a third around obstacles
+  // on phones, where the free space is a thin ring.
+  const pad = small ? 3 : 2
+
+  const placed: [number, number][] = []
+  const room = (x: number, y: number) =>
+    Math.min(
+      2 * Math.min(x, y, w - x, h - y),
+      pad * (Math.hypot(x - cx, y - cy) - dialR),
+      pad * rectDist(x, y, title),
+      pad * rectDist(x, y, dock),
+      ...placed.map(([px, py]) => Math.hypot(px - x, py - y)),
+    )
+
+  const out: Sticker[] = []
+  for (let i = 0; i < target; i++) {
+    let best: [number, number] = [0, 0]
+    let bestRoom = -Infinity
+    // Fill whichever quarter around the dial has the fewest stickers, so
+    // left/right and top/bottom stay balanced.
+    const counts = [0, 0, 0, 0]
+    for (const [px, py] of placed) counts[(px < cx ? 0 : 1) + (py < cy ? 0 : 2)]++
+    const fewest = Math.min(...counts)
+    const open = counts.flatMap((c, q) => (c === fewest ? [q] : []))
+    const q = open[Math.floor(r() * open.length)]
+    const [x0, y0] = [q % 2 ? cx : 0, q < 2 ? 0 : cy]
+    const [qw, qh] = [q % 2 ? w - cx : cx, q < 2 ? cy : h - cy]
+    // Only candidates in free space count, so narrow screens (where most of
+    // the area is dial) still get a fair search.
+    for (let k = 0, tries = 0; k < 150 && tries < 6000; tries++) {
+      const x = x0 + r() * qw
+      const y = y0 + r() * qh
+      const d = room(x, y)
+      if (d <= 0) continue
+      k++
+      if (d > bestRoom) {
+        bestRoom = d
+        best = [x, y]
+      }
     }
     // Small screens simply get fewer stickers.
-    if (!spot) continue
+    if (bestRoom < minGap) break
+    placed.push(best)
     const depth = 0.4 + r() * 0.6
     out.push({
       emoji: pool[i],
-      x: (spot[0] / w) * 100,
-      y: (spot[1] / h) * 100,
+      x: (best[0] / w) * 100,
+      y: (best[1] / h) * 100,
       size: (Math.min(w, h) < 600 ? 26 : 34) + depth * 36,
       depth,
       dur: 9 + r() * 10,
