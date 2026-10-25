@@ -185,8 +185,8 @@ export class AudioEngine {
     })
   }
 
-  // Little UI blips: start / pause / resume / finish / boop.
-  cue(kind: 'start' | 'pause' | 'resume' | 'end' | 'pop') {
+  // Little UI blips: start / pause / resume / finish / boop / speed change.
+  cue(kind: 'start' | 'pause' | 'resume' | 'end' | 'pop' | 'relaxed' | 'normal' | 'fast') {
     if (!this.ctx) return
     const now = this.ctx.currentTime + 0.01
     const out = this.voice(now, 0.6)
@@ -196,6 +196,9 @@ export class AudioEngine {
       pause: [74, 67],
       end: [79, 74, 71, 67, 62],
       pop: [84 + Math.floor(Math.random() * 3) * 2],
+      relaxed: [74, 67],
+      normal: [71, 74],
+      fast: [74, 79, 83],
     }
     const gap = kind === 'end' ? 0.09 : 0.07
     seqs[kind].forEach((m, i) => {

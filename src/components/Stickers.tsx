@@ -53,15 +53,15 @@ function layout(w: number, h: number): Sticker[] {
     const j = Math.floor(r() * (i + 1))
     ;[pool[i], pool[j]] = [pool[j], pool[i]]
   }
-  const dial = Math.max(250, Math.min(420, w * 0.84, h - 270))
+  const dial = Math.max(250, Math.min(420, w * 0.84, h - 300))
   const dialR = dial / 2 + 44
   const cx = w / 2
-  const cy = h / 2 + 45
+  const cy = h / 2 + 12
   const spacing = Math.max(70, Math.min(w, h) * 0.13)
   const blocked = (x: number, y: number) =>
     Math.hypot(x - cx, y - cy) < dialR ||
     (y < 150 && Math.abs(x - cx) < Math.min(330, w * 0.42)) ||
-    (y > h - 90 && Math.abs(x - cx) < 270)
+    (y > h - 140 && Math.abs(x - cx) < 280)
 
   for (let i = 0; i < pool.length && out.length < 18; i++) {
     let spot: [number, number] | null = null

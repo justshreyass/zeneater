@@ -4,12 +4,13 @@ import { Confetti } from './components/Confetti'
 import { Dial } from './components/Dial'
 import { Stickers } from './components/Stickers'
 import { audio } from './engine/audio'
-import { CHEWS_PER_BITE } from './engine/timeline'
+import { SpeedTabs } from './components/SpeedTabs'
+import { CHEWS_PER_BITE, SPEED_ORDER, SPEEDS } from './engine/timeline'
 import { usePressControl } from './engine/usePressControl'
 import { useSession } from './engine/useSession'
 
 export default function App() {
-  const { status, snap, summary, start, toggle, end } = useSession()
+  const { status, snap, summary, speed, start, toggle, end, setSpeed } = useSession()
   const [muted, setMuted] = useState(false)
   const mainRef = useRef<HTMLElement>(null)
   const inSession = status === 'running' || status === 'paused'
@@ -20,9 +21,13 @@ export default function App() {
     onTap: toggle,
     onHold: end,
     onKey: (k) => {
-      if (k !== 'm') return
-      audio.setMuted(!audio.muted)
-      setMuted(audio.muted)
+      if (k === 'm') {
+        audio.setMuted(!audio.muted)
+        setMuted(audio.muted)
+        return
+      }
+      const s = SPEED_ORDER.find((s) => SPEEDS[s].key === k)
+      if (s) setSpeed(s)
     },
     pointerTarget: mainRef,
   })
@@ -66,36 +71,39 @@ export default function App() {
         <Confetti trigger={burst} />
       </div>
 
-      <footer className="hints">
-        {inSession ? (
-          <>
-            <span className="kb-only">
-              <kbd>space</kbd> pause / resume
-            </span>
-            <span className="touch-only">tap to pause</span>
-            <span className="dot-sep" />
-            <span className="kb-only">
-              hold <kbd>space</kbd> 3s to finish
-            </span>
-            <span className="touch-only">hold 3s to finish</span>
-          </>
-        ) : (
-          <>
-            <span>7s to prep a bite</span>
-            <span className="dot-sep" />
-            <span>chew to the beat ×32</span>
-            <span className="dot-sep" />
-            <span>repeat</span>
-          </>
-        )}
-        {muted && (
-          <>
-            <span className="dot-sep" />
-            <span>
-              muted · <kbd>m</kbd>
-            </span>
-          </>
-        )}
+      <footer className="dock">
+        <SpeedTabs speed={speed} onChange={setSpeed} />
+        <div className="hints glass-pill">
+          {inSession ? (
+            <>
+              <span className="kb-only">
+                <kbd>space</kbd> pause / resume
+              </span>
+              <span className="touch-only">tap to pause</span>
+              <span className="dot-sep" />
+              <span className="kb-only">
+                hold <kbd>space</kbd> 3s to finish
+              </span>
+              <span className="touch-only">hold 3s to finish</span>
+            </>
+          ) : (
+            <>
+              <span>7s to prep a bite</span>
+              <span className="dot-sep" />
+              <span>chew to the beat ×32</span>
+              <span className="dot-sep" />
+              <span>repeat</span>
+            </>
+          )}
+          {muted && (
+            <>
+              <span className="dot-sep" />
+              <span>
+                muted · <kbd>m</kbd>
+              </span>
+            </>
+          )}
+        </div>
       </footer>
     </main>
   )
