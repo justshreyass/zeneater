@@ -21,6 +21,32 @@ interface Voice {
   out: GainNode
 }
 
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+
+// A short, looping silent WAV. Playing it through an <audio> element moves
+// older iOS into the "playback" audio session, so Web Audio is heard even
+// with the ring/silent switch off.
+function silentWavUrl() {
+  const samples = 4000 // 0.5 s at 8 kHz, 8-bit mono
+  const buf = new ArrayBuffer(44 + samples)
+  const v = new DataView(buf)
+  const str = (o: number, s: string) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)))
+  str(0, 'RIFF')
+  v.setUint32(4, 36 + samples, true)
+  str(8, 'WAVEfmt ')
+  v.setUint32(16, 16, true)
+  v.setUint16(20, 1, true)
+  v.setUint16(22, 1, true)
+  v.setUint32(24, 8000, true)
+  v.setUint32(28, 8000, true)
+  v.setUint16(32, 1, true)
+  v.setUint16(34, 8, true)
+  str(36, 'data')
+  v.setUint32(40, samples, true)
+  for (let i = 0; i < samples; i++) v.setUint8(44 + i, 128)
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }))
+}
+
 export class AudioEngine {
   private ctx: AudioContext | null = null
   private master!: GainNode
@@ -28,6 +54,7 @@ export class AudioEngine {
   private wet!: GainNode
   private voices: Voice[] = []
   private _muted = false
+  private keepAlive: HTMLAudioElement | null = null
 
   get context() {
     return this.ctx
@@ -37,9 +64,43 @@ export class AudioEngine {
     return this._muted
   }
 
+  // Must be called from inside a user gesture (tap, click, key press).
+  // Everything up to the first await runs synchronously within it, which is
+  // what iOS Safari requires.
   async unlock() {
+    this.useMediaSession()
     if (!this.ctx) this.build()
-    if (this.ctx!.state !== 'running') await this.ctx!.resume()
+    const ctx = this.ctx!
+    // Safari reports 'interrupted' after a call, Siri or locking the phone.
+    if (ctx.state !== 'running') {
+      // Starting a silent buffer inside the gesture is the most reliable
+      // way to wake iOS audio, older versions included.
+      const src = ctx.createBufferSource()
+      src.buffer = ctx.createBuffer(1, 1, ctx.sampleRate)
+      src.connect(ctx.destination)
+      src.start()
+      try {
+        await ctx.resume()
+      } catch {
+        /* retried on the next gesture */
+      }
+    }
+  }
+
+  // Ask iOS to treat us like media rather than a ringtone, so sound isn't
+  // muted by the silent switch.
+  private useMediaSession() {
+    const nav = navigator as Navigator & { audioSession?: { type: string } }
+    if (nav.audioSession) {
+      if (nav.audioSession.type !== 'playback') nav.audioSession.type = 'playback'
+      return
+    }
+    if (!isIOS) return
+    if (!this.keepAlive) {
+      this.keepAlive = new Audio(silentWavUrl())
+      this.keepAlive.loop = true
+    }
+    if (this.keepAlive.paused) this.keepAlive.play().catch(() => {})
   }
 
   setMuted(m: boolean) {
@@ -64,8 +125,19 @@ export class AudioEngine {
   }
 
   private build() {
-    const ctx = new AudioContext({ latencyHint: 'interactive' })
+    const Ctx = window.AudioContext ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext!
+    const ctx = new Ctx({ latencyHint: 'interactive' })
     this.ctx = ctx
+
+    // If iOS suspends audio mid-meal, the next touch or key press brings it
+    // back, whatever that gesture was for.
+    const wake = () => {
+      if (ctx.state !== 'running') this.unlock()
+    }
+    for (const ev of ['touchend', 'pointerup', 'keydown', 'click']) window.addEventListener(ev, wake, { capture: true, passive: true })
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && ctx.state !== 'running') ctx.resume().catch(() => {})
+    })
     const comp = ctx.createDynamicsCompressor()
     comp.threshold.value = -14
     comp.ratio.value = 3
